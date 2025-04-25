@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <title>互相攻击概率计算器｜优化版</title>
+    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.14.9/dist/cdn.min.js"></script>
+    <style>
+        :root {
+            --bg: #f4f4f4;
+            --card: #fff;
+            --radius: 12px;
+            --shadow: 0 2px 8px rgba(0, 0, 0, .08);
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: system-ui, -apple-system, sans-serif;
+            margin: 0;
+            background: var(--bg);
+            padding: 2rem;
+        }
+
+        h1 {
+            margin: 0 0 1rem;
+            font-size: 1.5rem;
+        }
+
+        .card {
+            background: var(--card);
+            border-radius: var(--radius);
+            box-shadow: var(--shadow);
+            max-width: 850px;
+            margin: auto;
+            padding: 1.75rem;
+        }
+
+        label {
+            display: block;
+            font-weight: 600;
+            margin-top: 1.25rem;
+        }
+
+        input[type=range] {
+            width: 100%;
+        }
+
+        .val {
+            font-weight: 700;
+            font-size: .9rem;
+            margin-left: .4rem;
+            color: #1565c0;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 1.5rem;
+            font-size: 1.05rem;
+        }
+
+        th,
+        td {
+            border: 1px solid #d0d0d0;
+            padding: .6rem;
+            text-align: center;
+        }
+
+        th {
+            background: #fafafa;
+            font-weight: 700;
+        }
+
+        .prob {
+            color: #1565c0;
+            font-weight: 700;
+        }
+
+        .btns {
+            display: flex;
+            flex-wrap: wrap;
+            gap: .5rem;
+            margin-bottom: 1rem;
+        }
+
+        button {
+            padding: .4rem .8rem;
+            border: none;
+            border-radius: 8px;
+            background: #1565c0;
+            color: #fff;
+            cursor: pointer;
+            font-size: .9rem;
+        }
+
+        button:hover {
+            filter: brightness(1.1);
+        }
+
+        details {
+            margin-top: 1rem;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            padding: .5rem 1rem;
+            background: #fafafa;
+        }
+
+        summary {
+            font-weight: 700;
+            cursor: pointer;
+        }
+
+        small {
+            display: block;
+            color: #666;
+            margin-top: .15rem;
+        }
+
+        .reset {
+            background: #888;
+        }
+
+        .reset:hover {
+            filter: brightness(1.1);
+        }
+    </style>
+</head>
+
+<body>
+    <div x-data="calc()" class="card">
+        <h1>《三角洲行动》互相攻击概率计算器</h1>
+
+        <!-- 全局恢复按钮 -->
+        <!-- <button class="reset" @click="resetAll">恢复默认（全部）</button> -->
+
+        <!-- 快捷场景 -->
+        <div class="btns" style="margin-top:.7rem;">
+            <button @click="preset(5e6,0.7,1e6,0.1)">500w 全装 vs 100w 老鼠</button>
+            <button @click="preset(5e6,0.7,4e6,0.7)">500w 全装 vs 400w 全装</button>
+            <button @click="preset(2e6,0.7,1e6,0.1)">200w 没吃饱 vs 100w 老鼠</button>
+            <button @click="preset(1e6,0.7,1e6,0.1)">100w 没吃饱 vs 100w 老鼠</button>
+            <button @click="preset(1e5,0.7,1e6,0.1)">10w 没吃饱 vs 100w 老鼠</button>
+        </div>
+
+        <!-- 队伍输入 -->
+        <label>队伍 A 装备价值 <span class="val" x-text="equipA.toLocaleString()"></span></label>
+        <input type="range" min="0" max="10000000" step="10000" x-model.number="equipA">
+        <label>队伍 A 攻击欲望 <span class="val" x-text="desireA.toFixed(2)"></span></label>
+        <input type="range" min="0" max="1" step="0.01" x-model.number="desireA">
+
+        <label style="margin-top:2rem;">队伍 B 装备价值 <span class="val" x-text="equipB.toLocaleString()"></span></label>
+        <input type="range" min="0" max="10000000" step="10000" x-model.number="equipB">
+        <label>队伍 B 攻击欲望 <span class="val" x-text="desireB.toFixed(2)"></span></label>
+        <input type="range" min="0" max="1" step="0.01" x-model.number="desireB">
+
+        <label style="margin-top:2rem;">第三方干预可能性 (0-1) <span class="val" x-text="density.toFixed(2)"></span></label>
+        <input type="range" min="0" max="1" step="0.01" x-model.number="density">
+        <label>地图剩余时间 (0-1) <span class="val" x-text="timeLeft.toFixed(2)"></span></label>
+        <input type="range" min="0" max="1" step="0.01" x-model.number="timeLeft">
+
+        <!-- 恢复普通参数按钮 -->
+        <button class="reset" style="margin-top:.7rem;" @click="resetNormal">恢复普通参数</button>
+
+        <!-- 高级参数 -->
+        <details>
+            <summary>高级参数（经验系数，可调）</summary>
+
+            <label>β – 背包容量衰减指数 <span class="val" x-text="beta.toFixed(2)"></span>
+                <small>C = max(0, 1 - (E / 5e6)<sup>β</sup>)</small>
+            </label>
+            <input type="range" min="0.4" max="1.2" step="0.05" x-model.number="beta">
+
+            <label>riskRatio – 基础损耗比例 <span class="val" x-text="riskRatio.toFixed(2)"></span>
+                <small>风险 = riskRatio × 装备价值 × 环境倍率</small>
+            </label>
+            <input type="range" min="0" max="0.5" step="0.01" x-model.number="riskRatio">
+
+            <label>ρ (rho) – 背包容量对风险折扣 <span class="val" x-text="rho.toFixed(2)"></span>
+                <small>背包越空风险折扣越大</small>
+            </label>
+            <input type="range" min="0" max="1" step="0.01" x-model.number="rho">
+
+            <label>k – 逻辑斯蒂斜率 <span class="val" x-text="k.toExponential(2)"></span></label>
+            <input type="range" min="5e-7" max="1e-5" step="5e-7" x-model.number="k">
+
+            <label>P<sub>min</sub> – 欲望=0 保底概率 <span class="val" x-text="Pmin.toFixed(2)"></span></label>
+            <input type="range" min="0" max="0.5" step="0.01" x-model.number="Pmin">
+
+            <!-- 恢复高级参数按钮 -->
+            <button class="reset" style="margin-top:.7rem;" @click="resetAdvanced">恢复高级参数</button>
+        </details>
+
+        <!-- 结果表 -->
+        <table>
+            <thead>
+                <tr>
+                    <th>队伍</th>
+                    <th>攻击概率</th>
+                    <th>攻击预期收益</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>A 队</td>
+                    <td class="prob" x-text="formatProb(pAttackA)"></td>
+                    <td x-text="expectedGainA.toLocaleString()"></td>
+                </tr>
+                <tr>
+                    <td>B 队</td>
+                    <td class="prob" x-text="formatProb(pAttackB)"></td>
+                    <td x-text="expectedGainB.toLocaleString()"></td>
+                </tr>
+            </tbody>
+        </table>
+
+        <p style="margin-top:1.25rem;font-size:1.15rem;font-weight:700;">
+            双方发生交火总概率：<span class="prob" x-text="formatProb(pConflict)"></span> <span x-text="comment"></span>
+        </p>
+    </div>
+
+    <script>
+        function calc() {
+            /* --------- 默认值集合 --------- */
+            const defaults = {
+                equipA: 5e6, desireA: 0.7,
+                equipB: 1e6, desireB: 0.1,
+                density: 0.5, timeLeft: 0.5,
+                beta: 0.8, riskRatio: 0.30, rho: 0.6, k: 0.000002, Pmin: 0.10
+            };
+
+            return {
+                /* --- 普通参数 --- */
+                equipA: defaults.equipA, desireA: defaults.desireA,
+                equipB: defaults.equipB, desireB: defaults.desireB,
+                density: defaults.density, timeLeft: defaults.timeLeft,
+
+                /* --- 高级参数 --- */
+                beta: defaults.beta, riskRatio: defaults.riskRatio,
+                rho: defaults.rho, k: defaults.k, Pmin: defaults.Pmin,
+
+                /* 预设 */
+                preset(eA, dA, eB, dB) { this.equipA = eA; this.desireA = dA; this.equipB = eB; this.desireB = dB; },
+
+                /* 恢复函数 */
+                resetNormal() {
+                    Object.assign(this, {
+                        equipA: defaults.equipA, desireA: defaults.desireA,
+                        equipB: defaults.equipB, desireB: defaults.desireB,
+                        density: defaults.density, timeLeft: defaults.timeLeft
+                    });
+                },
+                resetAdvanced() {
+                    Object.assign(this, {
+                        beta: defaults.beta, riskRatio: defaults.riskRatio,
+                        rho: defaults.rho, k: defaults.k, Pmin: defaults.Pmin
+                    });
+                },
+                resetAll() { this.resetNormal(); this.resetAdvanced(); },
+
+                /* 工具函数 */
+                capacity(E) { return Math.max(0, 1 - Math.pow(E / 5_000_000, this.beta)); },
+                logistic(x) { return 1 / (1 + Math.exp(-this.k * x)); },
+                riskMult() { return 1 + 0.5 * this.density + 0.5 * (1 - this.timeLeft); },
+                formatProb(p) {
+                    const lo = Math.max(0, p - 0.2 * p), hi = Math.min(1, p + 0.2 * p);
+                    return `${(p * 100).toFixed(1)}% [${(lo * 100).toFixed(0)}–${(hi * 100).toFixed(0)}]`;
+                },
+
+                /* Δ */
+                get deltaA() {
+                    const C = this.capacity(this.equipA);
+                    const risk = this.riskRatio * this.equipA * (1 - this.rho * C) * this.riskMult();
+                    return C * this.equipB - risk;
+                },
+                get deltaB() {
+                    const C = this.capacity(this.equipB);
+                    const risk = this.riskRatio * this.equipB * (1 - this.rho * C) * this.riskMult();
+                    return C * this.equipA - risk;
+                },
+
+                /* 概率 */
+                get baseAttackA() { return this.logistic(this.deltaA); },
+                get baseAttackB() { return this.logistic(this.deltaB); },
+                get pAttackA() {
+                    const hi = Math.max(this.baseAttackA, this.Pmin), lo = Math.min(this.baseAttackA, this.Pmin);
+                    return lo + this.desireA * (hi - lo);
+                },
+                get pAttackB() {
+                    const hi = Math.max(this.baseAttackB, this.Pmin), lo = Math.min(this.baseAttackB, this.Pmin);
+                    return lo + this.desireB * (hi - lo);
+                },
+                get pConflict() { return 1 - (1 - this.pAttackA) * (1 - this.pAttackB); },
+
+                /* 收益 */
+                get expectedGainA() { return Math.round(this.baseAttackA * this.deltaA); },
+                get expectedGainB() { return Math.round(this.baseAttackB * this.deltaB); },
+
+                /* 评语 */
+                get comment() {
+                    const p = this.pConflict;
+                    if (p <= 0.2) return "（几乎不会发生交火）";
+                    if (p <= 0.5) return "（可能性一般）";
+                    if (p <= 0.8) return "（比较可能发生交火）";
+                    return "（非常有可能发生交火）";
+                }
+            }
+        }
+    </script>
+</body>
+
+</html>
